@@ -1,0 +1,153 @@
+# LLM-SQL Column Ordering — KTPO task config
+# Model: Qwen3-4B-Instruct-2507
+# 1 island, large pop (9999), small archive (10), num_top_programs=0
+# Prompt aligned with AdaEvolve (skydiscover) — minimal extra prior
+
+variables:
+  core_parameters:
+    num_datasets: 5
+    target_value: 0.85
+
+  PROBLEM_TYPE: "LLM_SQL_ColumnOrdering"
+  MAX_RUNTIME: 300
+
+  score_transform:
+    score_range_min: 0.0
+    score_range_max: 1.0
+    alpha: 1.0
+    optimize_mode: "maximize"
+    positive_multiplier: 5.0
+
+checkpoint_interval: 128
+max_code_length: 48000
+log_level: "INFO"
+
+llm:
+  # Not used for sampling: rollout sampling is set by launcher flags (--rollout-temperature 1.0).
+  models:
+    - name: "Qwen/Qwen3-4B-Instruct-2507"
+      weight: 1.0
+  api_base: "http://127.0.0.1:8000/v1"
+  api_key: "EMPTY"
+  timeout: 600
+  retries: 3
+  retry_delay: 5
+
+prompt:
+  use_system_prompt: false
+
+  use_system_message_sampling: true
+  system_message_list:
+    - message: |
+        You are an expert in data optimization and LLM prompt caching. Your task is to evolve the existing Evolved class to maximize prefix hit count (PHC) for efficient LLM prompt caching.
+
+        Problem Context:
+        - You are given a pandas DataFrame `df` with text data in rows and columns
+        - The goal is to reorder columns to maximize prefix reuse when processing rows sequentially
+        - Prefix reuse occurs when consecutive rows have matching values in the same column positions
+        - This reduces LLM computation costs by reusing cached prefixes
+
+        Objective:
+        - Dual objective: (1) maximize prefix reuse across consecutive rows and (2) minimize end-to-end runtime of the algorithm.
+        - Your goal is to evolve the Evolved class such that when the LLM processes each row sequentially, it reuses as much of the prefix from the previous row as possible, while keeping the algorithm computationally efficient.
+        - Prefix reuse is defined as consecutive field values (starting from the first column) that are **exact matches** with the corresponding fields of the previous row.
+        - The **hit score** of a row is defined as the **sum of squares of the string lengths** of the matching prefix fields.
+        - The algorithm will be evaluated on a combined metric that balances accuracy (prefix reuse) and speed (runtime).
+
+        Formally:
+        - For a given column ordering `C`, PHC(C) = sum over all rows `r` of `hit(C, r)`
+        - `hit(C, r)` = sum of `len(df[r][C[f]])^2` for all f in prefix where `df[r][C[f]] == df[r-1][C[f]]`; zero if mismatch starts at the first field.
+        - Runtime is measured as wall-clock seconds to compute the reordered DataFrame from the input DataFrame.
+        - Combined score used for selection: `combined_score = 0.95 * average_hit_rate + 0.05 * (12 - min(12, average_runtime)) / 12`.
+
+        Required API (DO NOT CHANGE):
+        - Your code MUST include both the `Evolved` class AND the `Solution` wrapper class.
+        - The `Evolved` class must inherit from `Algorithm` (imported from `solver`).
+        - The reorder method signature must be preserved exactly:
+             ```python
+             import pandas as pd
+             from solver import Algorithm
+             from typing import Tuple, List
+
+             class Evolved(Algorithm):
+                 def reorder(
+                     self,
+                     df: pd.DataFrame,
+                     early_stop: int = 0,
+                     row_stop: int = None,
+                     col_stop: int = None,
+                     col_merge: List[List[str]] = [],
+                     one_way_dep: List[Tuple[str, str]] = [],
+                     distinct_value_threshold: float = 0.8,
+                     parallel: bool = True,
+                 ) -> Tuple[pd.DataFrame, List[List[str]]]:
+                     ...
+
+             class Solution:
+                 def __init__(self):
+                     self.alg = Evolved()
+                 def solve(self, df, **kwargs) -> pd.DataFrame:
+                     reordered_df, _ = self.alg.reorder(df, **kwargs)
+                     return reordered_df
+             ```
+        - You can modify the internal implementation of methods but must preserve the class structure and method signatures.
+        - The reorder method must return a tuple of (reordered_dataframe, column_orderings).
+
+        Available base class methods (from `Algorithm`):
+        - `self.calculate_col_stats(df, enable_index=True)` → returns `(num_rows, column_stats)` where `column_stats` is a list of `(col_name, num_groups, avg_length_sq, score)` tuples sorted by score descending.
+        - `self.merging_columns(df, col_names, delimiter="_", prepended=False)` → merges columns and returns new DataFrame.
+        - `self.calculate_length(value)` → returns `len(str(value)) ** 2`.
+
+        Algorithm Design Guidelines:
+        - For each row, determine the optimal column order based on matches with the previous row
+        - Consider column statistics (unique values, string lengths) for ordering
+        - Implement greedy or heuristic approaches for scalability
+        - Focus on columns with high value frequency and long strings
+        - Handle missing values and mixed data types appropriately
+        - Optimize the existing recursive approach or replace it with more efficient vectorized methods
+        - Consider prefix-aware greedy approaches that condition on the current matched prefix
+
+        Constraints:
+        - Do not add/remove rows or columns
+        - Do not modify, fabricate, or duplicate cell values — the output must be a strict permutation of the input rows and columns (after applying col_merge). Row-level integrity is verified via hashing.
+        - Each dataset has a 60-second wall-clock timeout. If the algorithm exceeds this on a dataset, that dataset scores 0. Prioritize efficient implementations — avoid O(n^2) or higher complexity over rows/columns.
+        - You must have different column orderings for different rows to maximize prefix hit rate
+        - Return a DataFrame with the same shape as input
+        - Use exact string matching for prefix calculations
+        - Keep memory usage reasonable for large datasets
+        - Preserve all existing method signatures and class structure
+        - The algorithm will be called with the same parameters as the original Evolved
+
+        Return the complete program with all imports, the Evolved class, and the Solution class. Do not provide explanations.
+
+      weight: 1.0
+
+  num_top_programs: 0
+  num_diverse_programs: 0
+  num_inspiration_programs: 0
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 16384
+  artifact_security_filter: true
+
+database:
+  population_size: 9999
+  archive_size: 10
+  num_islands: 1
+  feature_dimensions:
+    - "score"
+    - "complexity"
+  log_prompts: true
+
+evaluator:
+  timeout: 150
+  max_retries: 0
+  cascade_evaluation: false
+  parallel_evaluations: 192
+  use_llm_feedback: false
+  enable_artifacts: true
+  collect_runtime_environments: true
+  preserve_temp_directories: false
+  runtime_environment_patterns:
+    - "*"
+

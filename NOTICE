@@ -1,0 +1,13 @@
+KTPO: K-Step Test-Time Policy Optimization for Long-Horizon Discovery
+Copyright 2026 the KTPO authors
+
+This repository is built on the following projects, each licensed under the
+Apache License, Version 2.0:
+
+- ThetaEvolve (https://github.com/ypwang61/ThetaEvolve)
+- slime, by THUDM (https://github.com/THUDM/slime)
+- OpenEvolve (https://github.com/codelion/openevolve)
+
+Files under slime/, slime_plugins/ and openevolve_adapted/ include
+modifications by the KTPO authors. The original license texts are kept in
+LICENSE and openevolve_adapted/LICENSE.

@@ -1,0 +1,133 @@
+diff --git a/python/sglang/srt/managers/scheduler.py b/python/sglang/srt/managers/scheduler.py
+index 10615e072329..localidlehealth 100644
+--- a/python/sglang/srt/managers/scheduler.py
++++ b/python/sglang/srt/managers/scheduler.py
+@@ -1371,12 +1371,9 @@
+     def process_input_requests(self, recv_reqs: List):
+ 
+         for recv_req in recv_reqs:
+-            # If it is a health check generation request and there are running requests, ignore it.
+-            if is_health_check_generate_req(recv_req) and (
+-                self.chunked_req is not None
+-                or self.dllm_manager.any_staging_reqs()
+-                or not self.running_batch.is_empty()
+-                or len(self.offload_tags) > 0
++            # Skip health check when server is busy; active requests already carry health info.
++            if is_health_check_generate_req(recv_req) and not self.is_fully_idle(
++                for_health_check=True
+             ):
+                 self.return_health_check_ct += 1
+                 continue
+@@ -2495,20 +2492,35 @@
+             if_success = False
+         return ClearHiCacheReqOutput(success=if_success)
+ 
+-    def _is_idle_for_hicache_storage_op(self) -> bool:
+-        """Stricter idle check for storage attach/detach.
+-
+-        We require:
+-        - no running batches (including overlap/pp/disagg paths) via `_is_no_request()`
+-        - no queued requests in scheduler queues (waiting/grammar/disagg queues)
+-        """
+-        if not self._is_no_request():
+-            return False
+-        if len(self.waiting_queue) != 0:
+-            return False
+-        if len(self.grammar_manager.grammar_queue) != 0:
+-            return False
+-        return True
++    def is_fully_idle(self, for_health_check=False) -> bool:
++        idle = (
++            self.running_batch.is_empty()
++            and self.chunked_req is None
++            and not self.dllm_manager.any_staging_reqs()
++            and (self.last_batch is None or self.last_batch.is_empty())
++            and (self.cur_batch is None or self.cur_batch.is_empty())
++            and (not self.enable_overlap or len(self.result_queue) == 0)
++            and (self.pp_size == 1 or all(x.is_empty() for x in self.running_mbs))
++        )
++
++        # Waiting queues: waiting + bootstrapping + preallocation + kv transfer (decode)
++        idle &= len(self.waiting_queue) == 0
++        if self.disaggregation_mode == DisaggregationMode.PREFILL:
++            idle &= len(self.disagg_prefill_bootstrap_queue.queue) == 0
++        if self.disaggregation_mode == DisaggregationMode.DECODE:
++            idle &= (
++                len(self.disagg_decode_prealloc_queue.queue) == 0
++                and len(self.disagg_decode_transfer_queue.queue) == 0
++            )
++
++        if not for_health_check:
++            # Grammar queue and prefill inflight queue may not produce batch results
++            # instantly, but they still indicate the server is not fully idle.
++            idle &= len(self.grammar_manager.grammar_queue) == 0
++            if self.disaggregation_mode == DisaggregationMode.PREFILL:
++                idle &= len(self.disagg_prefill_inflight_queue) == 0
++
++        return idle
+ 
+     def attach_hicache_storage_wrapped(
+         self, recv_req: AttachHiCacheStorageReqInput
+@@ -2518,7 +2530,7 @@
+                 success=False, message="Hierarchical cache is not enabled."
+             )
+ 
+-        if not self._is_idle_for_hicache_storage_op():
++        if not self.is_fully_idle():
+             return AttachHiCacheStorageReqOutput(
+                 success=False,
+                 message=(
+@@ -2571,7 +2583,7 @@
+                 success=False, message="Hierarchical cache is not enabled."
+             )
+ 
+-        if not self._is_idle_for_hicache_storage_op():
++        if not self.is_fully_idle():
+             return DetachHiCacheStorageReqOutput(
+                 success=False,
+                 message=(
+@@ -2607,29 +2619,9 @@
+ 
+         return DetachHiCacheStorageReqOutput(success=False, message=msg)
+ 
+-    def _is_no_request(self):
+-        no_request = (
+-            self.running_batch.is_empty()
+-            and (self.last_batch is None or self.last_batch.is_empty())
+-            and (self.cur_batch is None or self.cur_batch.is_empty())
+-            and (not self.enable_overlap or len(self.result_queue) == 0)
+-            and (self.pp_size == 1 or all(x.is_empty() for x in self.running_mbs))
+-        )
+-        if self.disaggregation_mode == DisaggregationMode.PREFILL:
+-            no_request &= (
+-                len(self.disagg_prefill_bootstrap_queue.queue) == 0
+-                and len(self.disagg_prefill_inflight_queue) == 0
+-            )
+-        if self.disaggregation_mode == DisaggregationMode.DECODE:
+-            no_request &= (
+-                len(self.disagg_decode_prealloc_queue.queue) == 0
+-                and len(self.disagg_decode_transfer_queue.queue) == 0
+-            )
+-        return no_request
+-
+     def flush_cache(self):
+         """Flush the memory pool and cache."""
+-        if self._is_no_request():
++        if self.is_fully_idle():
+             self.cur_batch = None
+             self.last_batch = None
+             self.tree_cache.reset()
+diff --git a/python/sglang/srt/managers/scheduler_update_weights_mixin.py b/python/sglang/srt/managers/scheduler_update_weights_mixin.py
+index ba038877b432..localidlehealth 100644
+--- a/python/sglang/srt/managers/scheduler_update_weights_mixin.py
++++ b/python/sglang/srt/managers/scheduler_update_weights_mixin.py
+@@ -130,8 +130,8 @@
+         self: Scheduler, recv_req: ReleaseMemoryOccupationReqInput
+     ):
+         assert (
+-            self._is_no_request()
+-        ), "release_memory_occupation should be called only when no ongoing request."
++            self.is_fully_idle()
++        ), "release_memory_occupation should be called only when server is idle."
+ 
+         tags = recv_req.tags

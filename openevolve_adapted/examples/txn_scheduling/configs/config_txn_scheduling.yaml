@@ -1,0 +1,80 @@
+# TXN Scheduling — KTPO task config
+# Transaction scheduling to minimize makespan
+
+variables:
+  PROBLEM_TYPE: "TXN_Scheduling"
+  MAX_RUNTIME: 600
+
+  score_transform:
+    score_range_min: 0.0
+    score_range_max: 5000.0
+    alpha: 2.0
+    optimize_mode: "maximize"
+    positive_multiplier: 5.0
+
+checkpoint_interval: 128
+max_code_length: 60000
+log_level: "INFO"
+
+llm:
+  # Not used for sampling: rollout sampling is set by launcher flags (--rollout-temperature 1.0).
+  models:
+    - name: "Qwen/Qwen3-4B-Instruct-2507"
+      weight: 1.0
+  api_base: "http://127.0.0.1:8000/v1"
+  api_key: "EMPTY"
+  timeout: 600
+  retries: 3
+  retry_delay: 5
+
+prompt:
+  use_system_prompt: false
+
+  use_system_message_sampling: true
+  system_message_list:
+    - message: |
+        You are an expert in database transaction optimization.
+        Only change code within EVOLVE-BLOCK-START and EVOLVE-BLOCK-END.
+        Your task is to improve a scheduling function to find better schedules for transactional workloads made up of read and write operations to data items. There are conflicts between these transactions on items and reducing the delay of these conflicts will lead to schedules with lower makespan. Focus on improving the get_best_schedule function to find a schedule with as low makespan as possible.
+        **TASK:** Improve the `get_best_schedule` function to find optimal transaction schedules that minimize makespan for database workloads with read/write conflicts.
+        **PROBLEM SPECIFICS:**
+        - **Input:** JSON workload with transactions like `"txn0":"w-17 r-5 w-3 r-4 r-54 r-14 w-6 r-11 w-22 r-7 w-1 w-8 w-9 w-27 r-2 r-25"`
+        - **Operations:** Each transaction is a sequence of read (`r-{key}`) and write (`w-{key}`) operations on data items
+        - **Conflicts:** Read-write and write-write conflicts on the same key create dependencies between transactions
+        - **Goal:** Find transaction ordering that minimizes total makespan
+        **SEARCH SUGGESTIONS:**
+        - **Greedy:** You can try a greedy algorithm to iteratively pick the transaction that increases makespan the least.
+        - Avoid only using heuristics like transaction length, number of writes, etc. because these do not correspond to the actual makespan of the schedule.
+        Focus on evolving the `get_best_schedule` function to produce the best schedule possible with the lowest makespan.
+        Explain step-by-step the reasoning process for your solution and how this will lead to a better schedule.
+      weight: 1.0
+
+  num_top_programs: 0
+  num_diverse_programs: 0
+  num_inspiration_programs: 0
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 16384
+  artifact_security_filter: true
+
+database:
+  population_size: 9999
+  archive_size: 10
+  num_islands: 1
+  feature_dimensions:
+    - "score"
+    - "complexity"
+  log_prompts: true
+
+evaluator:
+  timeout: 180  # ≥ evaluator_modular.SUBPROCESS_TIMEOUT (150s) + margin
+  max_retries: 0
+  cascade_evaluation: false
+  parallel_evaluations: 16
+  use_llm_feedback: false
+  enable_artifacts: true
+  collect_runtime_environments: true
+  preserve_temp_directories: false
+  runtime_environment_patterns:
+    - "*"
+

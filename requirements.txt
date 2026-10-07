@@ -1,0 +1,14 @@
+accelerate
+cvxpy
+datasets
+httpx[http2]
+mcp[cli]
+pillow
+pylatexenc
+pyyaml
+ray[default]
+tensorboard
+torch
+transformers
+wandb
+pandas<3  # llm_sql evaluator fails on pandas 3

@@ -1,0 +1,75 @@
+# Cloudcast — KTPO task config
+# Model: Qwen3-4B-Instruct-2507
+# Prompt aligned with AdaEvolve (skydiscover)
+# 1 island, large pop (9999), small archive (10), num_top_programs=0
+
+variables:
+  core_parameters:
+    num_vms: 2
+
+  PROBLEM_TYPE: "Cloudcast"
+  MAX_RUNTIME: 60
+
+  score_transform:
+    score_range_min: 0.0
+    score_range_max: 1.0
+    alpha: 2.0
+    optimize_mode: "maximize"
+    positive_multiplier: 5.0
+
+checkpoint_interval: 128
+max_code_length: 48000
+log_level: "INFO"
+
+llm:
+  # Not used for sampling: rollout sampling is set by launcher flags (--rollout-temperature 1.0).
+  models:
+    - name: "Qwen/Qwen3-4B-Instruct-2507"
+      weight: 1.0
+  api_base: "http://127.0.0.1:8000/v1"
+  api_key: "EMPTY"
+  timeout: 600
+  retries: 3
+  retry_delay: 5
+
+prompt:
+  use_system_prompt: false
+
+  use_system_message_sampling: true
+  system_message_list:
+    - message: |
+        You are an expert in cloud infrastructure optimization. Your task is to evolve the search_algorithm(src, dsts, G, num_partitions) function to minimize overall data transfer cost across multiple clouds.
+        The time limit for each program evaluation is {MAX_RUNTIME} seconds.
+        Focus on efficiently broadcasting input data to multiple destination nodes by leveraging parallel paths and overlapping transfers across networks. Use the BroadCastTopology class and make_nx_graph function to identify low-cost routes.
+        Prioritize strategies that reduce redundant transfers, balance load across networks, and exploit multi-network topologies to minimize cost.
+      weight: 1.0
+
+  num_top_programs: 0
+  num_diverse_programs: 0
+  num_inspiration_programs: 0
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 16384
+  artifact_security_filter: true
+
+database:
+  population_size: 9999
+  archive_size: 10
+  num_islands: 1
+  feature_dimensions:
+    - "score"
+    - "complexity"
+  log_prompts: true
+
+evaluator:
+  timeout: 70
+  max_retries: 0
+  cascade_evaluation: false
+  parallel_evaluations: 16
+  use_llm_feedback: false
+  enable_artifacts: true
+  collect_runtime_environments: true
+  preserve_temp_directories: false
+  runtime_environment_patterns:
+    - "*"
+

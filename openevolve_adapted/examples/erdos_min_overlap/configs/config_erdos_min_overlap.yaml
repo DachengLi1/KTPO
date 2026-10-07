@@ -1,0 +1,104 @@
+# Erdos Minimum Overlap — KTPO task config
+# 1 island, large pop (9999), small archive (10), num_top_programs=0
+
+variables:
+  core_parameters:
+    target_value: 0.3809
+    domain: "[0, 2]"
+
+  PROBLEM_TYPE: "erdos_min_overlap"
+  MAX_RUNTIME: 300
+
+  score_transform:
+    score_range_min: 0.38
+    score_range_max: 0.50
+    alpha: 1.0
+    optimize_mode: "minimize"
+    positive_multiplier: 3.0
+
+checkpoint_interval: 128
+max_code_length: 48000
+log_level: "INFO"
+
+llm:
+  # Not used for sampling: rollout sampling is set by launcher flags (--rollout-temperature 1.0).
+  models:
+    - name: "Qwen/Qwen3-4B-Instruct-2507"
+      weight: 1.0
+  api_base: "http://127.0.0.1:8000/v1"
+  api_key: "EMPTY"
+  timeout: 600
+  retries: 3
+  retry_delay: 5
+
+prompt:
+  use_system_prompt: false
+  use_system_message_sampling: true
+  system_message_list:
+    - message: |
+        You are an expert in harmonic analysis, numerical optimization, and mathematical discovery.
+        Your task is to find an improved upper bound for the Erdos minimum overlap problem constant C5.
+
+        ## Problem
+
+        Find a step function h: [0, 2] -> [0, 1] that minimizes the overlap integral:
+
+        C_5 = max_k integral h(x)(1 - h(x+k)) dx
+
+        Constraints:
+        1. h(x) in [0, 1] for all x
+        2. integral_0^2 h(x) dx = 1
+
+        Discretization: Represent h as n_points samples over [0, 2].
+        With dx = 2.0 / n_points:
+        - 0 <= h[i] <= 1 for all i
+        - sum(h) * dx = 1 (equivalently: sum(h) == n_points / 2 exactly)
+
+        The evaluation computes: C5 = max(np.correlate(h, 1-h, mode="full") * dx)
+
+        Smaller sequences with less than 1k samples are preferred - they are faster to optimize and evaluate.
+
+        Lower C5 values are better.
+
+        ## Budget and Resources
+        - Time budget: {MAX_RUNTIME}s for your code to run
+        - CPUs: 2 available
+
+        ## Rules
+        - Use scipy, numpy, cvxpy, math
+        - Make all helper functions top level, no closures or lambdas
+        - No filesystem or network IO (save_checkpoint is pre-provided)
+        - Your function must complete within {MAX_RUNTIME} seconds and save the best solution found via save_checkpoint()
+
+        Lower is better. Current record: C5 <= 0.38092. Our goal: C5 <= 0.38080.
+      weight: 1.0
+
+  num_top_programs: 0
+  num_diverse_programs: 0
+  num_inspiration_programs: 0
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 16384
+  artifact_security_filter: true
+
+database:
+  population_size: 9999
+  archive_size: 10
+  num_islands: 1
+  feature_dimensions:
+    - "score"
+    - "complexity"
+  log_prompts: true
+
+evaluator:
+  timeout: 310
+  max_retries: 0
+  cascade_evaluation: false
+  parallel_evaluations: 16
+  use_llm_feedback: false
+  enable_artifacts: true
+  collect_runtime_environments: true
+  preserve_temp_directories: false
+  runtime_environment_patterns:
+    - "*"
+

@@ -1,0 +1,107 @@
+# Circle Packing n=26 — KTPO task config
+# Model: Qwen3-4B-Instruct-2507
+# 1 island, large pop (9999), small archive (10), num_top_programs=0
+
+variables:
+  core_parameters:
+    n_circles: 26
+    target_value: 2.636
+  
+  PROBLEM_TYPE: "CirclePacking_n=26"
+  MAX_RUNTIME: 60
+
+  score_transform:
+    score_range_min: 0.0
+    score_range_max: 2.636
+    alpha: 3.0
+    optimize_mode: "maximize"
+    positive_multiplier: 5.0
+
+checkpoint_interval: 128
+max_code_length: 48000
+log_level: "INFO"
+
+llm:
+  # Not used for sampling: rollout sampling is set by launcher flags (--rollout-temperature 1.0).
+  models:
+    - name: "Qwen/Qwen3-4B-Instruct-2507"
+      weight: 1.0
+  api_base: "http://127.0.0.1:8000/v1"
+  api_key: "EMPTY"
+  timeout: 600
+  retries: 3
+  retry_delay: 5
+
+prompt:
+  use_system_prompt: false
+
+  use_system_message_sampling: true
+  system_message_list:
+    - message: |
+        You are an expert mathematician specializing in circle packing problems and computational geometry. Your task is to improve a constructor function that directly produces a specific arrangement of {core_parameters.n_circles} circles in a unit square, maximizing the sum of their radii. The AlphaEvolve paper achieved a sum of {target_value} for n={core_parameters.n_circles}.
+        The time limit for each program evaluation is {MAX_RUNTIME} seconds.
+
+        Key geometric insights:
+        - Circle packings often follow hexagonal patterns in the densest regions
+        - Maximum density for infinite circle packing is pi/(2*sqrt(3)) ≈ 0.9069
+        - Edge effects make square container packing harder than infinite packing
+        - Circles can be placed in layers or shells when confined to a square
+        - Similar radius circles often form regular patterns, while varied radii allow better space utilization
+        - Perfect symmetry may not yield the optimal packing due to edge effects
+
+        Focus on designing an explicit constructor that places each circle in a specific position, rather than an iterative search algorithm.
+
+      weight: 0.3
+    
+    - message: |
+        You are an expert mathematician specializing in circle packing problems and computational geometry. We're trying to reach the AlphaEvolve target of {target_value} for the sum of radii when packing {core_parameters.n_circles} circles in a unit square. The current implementation has plateaued at some values, so we need significant improvements.
+        The time limit for each program evaluation is {MAX_RUNTIME} seconds.
+
+        Key insights to explore:
+        1. The optimal arrangement likely involves variable-sized circles
+        2. A pure hexagonal arrangement may not be optimal due to edge effects
+        3. The densest known circle packings often use a hybrid approach
+        4. The optimization routine is critically important - simple physics-based models with carefully tuned parameters
+        5. Consider strategic placement of circles at square corners and edges
+        6. Adjusting the pattern to place larger circles at the center and smaller at the edges
+        7. The math literature suggests special arrangements for specific values of n
+        8. scipy has some useful functions for optimization.
+
+        Focus on breaking through the plateau by trying fundamentally different approaches - don't just tweak parameters.
+
+        IMPORTANT: If you find the previous programs produce similar results, try as creative and evolutionary strategies as possible to explore different approaches.
+        
+      weight: 0.7
+
+  num_top_programs: 0
+  num_diverse_programs: 0
+  num_inspiration_programs: 0
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 16384
+  artifact_security_filter: true
+
+# Database: 1 island, large pop, small archive
+database:
+  population_size: 9999
+  archive_size: 10
+  num_islands: 1
+  feature_dimensions:
+    - "score"
+    - "complexity"
+  log_prompts: true
+
+# Evaluation settings
+evaluator:
+  timeout: 70
+  max_retries: 3
+  cascade_evaluation: false
+  parallel_evaluations: 16
+  use_llm_feedback: false
+  enable_artifacts: true
+  collect_runtime_environments: true
+  preserve_temp_directories: false
+  runtime_environment_patterns:
+    - "*"
+
+# Evolution settings
